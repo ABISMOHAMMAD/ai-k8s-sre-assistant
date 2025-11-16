@@ -3,7 +3,7 @@ name: Nightly K8s AI Analysis (Shell-only)
 on:
   push:
   schedule:
-    - cron: '0 18 * * *'   # daily at 18:00 UTC (~11:30 PM IST)
+    - cron: '0 18 * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -11,36 +11,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Install Prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl jq conntrack
 
-      - name: Install Docker (for Minikube backend)
+      - name: Start Docker (already preinstalled)
         run: |
-          sudo apt-get install -y docker.io
+          sudo systemctl enable docker || true
           sudo systemctl start docker || true
-          sudo usermod -aG docker $USER || true
+          docker --version
 
       - name: Install Minikube
         run: |
           curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
 
-      - name: Start Minikube (Docker Driver)
+      - name: Start Minikube (Docker driver)
         env:
           CHANGE_MINIKUBE_NONE_USER: true
         run: |
-          sudo minikube start --driver=docker --wait=all --v=4
+          sudo minikube start --driver=docker --wait=all --force-systemd=true
 
-      - name: Apply Broken Deployment
+      - name: Apply broken deployment
         run: |
           kubectl apply -f kubernetes/bad-deployment.yaml
 
-      - name: Wait for Pod to Fail
+      - name: Wait for pod to fail
         run: sleep 20
 
       - name: Install Ollama
@@ -48,11 +48,9 @@ jobs:
           curl -fsSL https://ollama.com/install.sh | sh
           ollama pull llama3 || true
 
-      - name: Run Log Collection
-        run: |
-          bash scripts/collect.sh
+      - name: Run collection
+        run: bash scripts/collect.sh
 
-      - name: Run AI Analysis
-        run: |
-          bash scripts/analyze.sh
+      - name: Run analysis
+        run: bash scripts/analyze.sh
 
