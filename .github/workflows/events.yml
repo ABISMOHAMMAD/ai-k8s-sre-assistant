@@ -3,7 +3,7 @@ name: Nightly K8s AI Analysis (Shell-only)
 on:
   push:
   schedule:
-    - cron: '0 18 * * *'
+    - cron: '0 18 * * *'   # everyday at 18:00 UTC (~11:30 PM IST)
   workflow_dispatch: {}
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends curl jq conntrack
 
-      - name: Start Docker (already preinstalled)
+      - name: Start Docker (preinstalled)
         run: |
           sudo systemctl enable docker || true
           sudo systemctl start docker || true
@@ -30,18 +30,33 @@ jobs:
           curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
 
-      - name: Start Minikube (Docker driver)
+      - name: Start Minikube (Docker driver, force root)
         env:
           CHANGE_MINIKUBE_NONE_USER: true
         run: |
           sudo minikube start --driver=docker --wait=all --force --force-systemd=true
+          kubectl config view
+
+      - name: Wait for Kubernetes API
+        run: |
+          echo "Waiting for Kubernetes API to become ready..."
+          for i in {1..30}; do
+            if kubectl get nodes >/dev/null 2>&1; then
+              echo "Kubernetes API is ready."
+              break
+            fi
+            echo "Still waiting... ($i/30)"
+            sleep 5
+          done
 
       - name: Apply broken deployment
         run: |
-          kubectl apply -f kubernetes/bad-deployment.yaml
+          kubectl apply -f kubernetes/bad-deployment.yaml --validate=false
 
-      - name: Wait for pod to fail
-        run: sleep 20
+      - name: Wait for pod status
+        run: |
+          sleep 20
+          kubectl get pods -A
 
       - name: Install Ollama
         run: |
@@ -51,6 +66,6 @@ jobs:
       - name: Run collection
         run: bash scripts/collect.sh
 
-      - name: Run analysis
+      - name: Run AI analysis
         run: bash scripts/analyze.sh
 
