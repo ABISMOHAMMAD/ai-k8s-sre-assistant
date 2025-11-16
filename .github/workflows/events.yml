@@ -1,71 +1,92 @@
-name: Nightly K8s AI Analysis (Shell-only)
+name: KIND K8s AI Analysis (CI-friendly)
 
 on:
   push:
+  workflow_dispatch:
   schedule:
-    - cron: '0 18 * * *'   # everyday at 18:00 UTC (~11:30 PM IST)
-  workflow_dispatch: {}
+    - cron: '0 18 * * *'  # daily at 18:00 UTC (~11:30 PM IST)
 
 jobs:
-  analyze:
+  kind-analysis:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Prerequisites
+      - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends curl jq conntrack
+          sudo apt-get install -y --no-install-recommends curl jq conntrack ca-certificates
 
-      - name: Start Docker (preinstalled)
+      - name: Ensure Docker is running
         run: |
           sudo systemctl enable docker || true
           sudo systemctl start docker || true
           docker --version
 
-      - name: Install Minikube
+      - name: Install kubectl
         run: |
-          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-          sudo install minikube-linux-amd64 /usr/local/bin/minikube
+          KUBECTL_VERSION=$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)
+          curl -LO "https://storage.googleapis.com/kubernetes-release/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
 
-      - name: Start Minikube (Docker driver, force root)
-        env:
-          CHANGE_MINIKUBE_NONE_USER: true
+      - name: Install kind
         run: |
-          sudo minikube start --driver=docker --wait=all --force --force-systemd=true
-          kubectl config view
+          KIND_VERSION="v0.20.0"
+          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind --version
 
-      - name: Wait for Kubernetes API
+      - name: Create kind cluster
         run: |
-          echo "Waiting for Kubernetes API to become ready..."
-          for i in {1..30}; do
-            if kubectl get nodes >/dev/null 2>&1; then
-              echo "Kubernetes API is ready."
-              break
-            fi
-            echo "Still waiting... ($i/30)"
-            sleep 5
-          done
+          # create a cluster and wait for control plane to be ready
+          kind create cluster --name ci-kind --wait 120s
+          kubectl cluster-info
+          kubectl get nodes -o wide
 
-      - name: Apply broken deployment
+      - name: Apply broken deployment (no validation)
         run: |
           kubectl apply -f kubernetes/bad-deployment.yaml --validate=false
 
-      - name: Wait for pod status
+      - name: Wait for resources and show pods
         run: |
-          sleep 20
-          kubectl get pods -A
+          # wait up to 60s for pods to appear
+          for i in {1..12}; do
+            kubectl get pods -A && break || true
+            echo "waiting for pods... ($i/12)"
+            sleep 5
+          done
+          kubectl get pods -A -o wide
 
-      - name: Install Ollama
+      - name: Run collection script
         run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-          ollama pull llama3 || true
+          chmod +x scripts/collect.sh
+          bash scripts/collect.sh
+          echo "Collected output:"
+          sed -n '1,200p' scripts/output.txt || true
 
-      - name: Run collection
-        run: bash scripts/collect.sh
+      - name: Try AI analysis (only if Ollama present)
+        run: |
+          chmod +x scripts/analyze.sh || true
+          if command -v ollama >/dev/null 2>&1; then
+            echo "ollama found — running analyze.sh"
+            bash scripts/analyze.sh
+          else
+            echo "ollama not found — skipping analyze.sh (inspect artifact)"
+          fi
 
-      - name: Run AI analysis
-        run: bash scripts/analyze.sh
+      - name: Upload logs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-output
+          path: scripts/output.txt
+
+      - name: Tear down kind cluster
+        if: always()
+        run: |
+          kind delete cluster --name ci-kind || true
 
