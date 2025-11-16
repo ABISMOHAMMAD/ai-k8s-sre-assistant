@@ -34,7 +34,7 @@ jobs:
         env:
           CHANGE_MINIKUBE_NONE_USER: true
         run: |
-          sudo minikube start --driver=docker --wait=all --force-systemd=true
+          sudo minikube start --driver=docker --wait=all --force --force-systemd=true
 
       - name: Apply broken deployment
         run: |
