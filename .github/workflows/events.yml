@@ -2,6 +2,7 @@ name: Nightly K8s AI Analysis (Shell-only)
 
 
 on:
+push:
 #schedule:
 #- cron: '0 18 * * *' # daily at 18:00 UTC (~11:30 PM IST)
 workflow_dispatch: {}
