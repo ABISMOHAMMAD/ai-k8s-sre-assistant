@@ -1,64 +1,58 @@
 name: Nightly K8s AI Analysis (Shell-only)
 
-
 on:
-push:
-#schedule:
-#- cron: '0 18 * * *' # daily at 18:00 UTC (~11:30 PM IST)
-workflow_dispatch: {}
-
+  push:
+  schedule:
+    - cron: '0 18 * * *'   # daily at 18:00 UTC (~11:30 PM IST)
+  workflow_dispatch: {}
 
 jobs:
-analyze:
-runs-on: ubuntu-latest
-steps:
-- name: Checkout
-uses: actions/checkout@v4
+  analyze:
+    runs-on: ubuntu-latest
 
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-- name: Install prerequisites
-run: |
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends curl jq conntrack
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl jq conntrack
 
+      - name: Install Docker (for Minikube backend)
+        run: |
+          sudo apt-get install -y docker.io
+          sudo systemctl start docker || true
+          sudo usermod -aG docker $USER || true
 
-- name: Install Docker (if missing) and start docker service
-run: |
-sudo apt-get install -y --no-install-recommends docker.io
-sudo systemctl start docker || true
-sudo usermod -aG docker $USER || true
+      - name: Install Minikube
+        run: |
+          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          sudo install minikube-linux-amd64 /usr/local/bin/minikube
 
+      - name: Start Minikube (Docker Driver)
+        env:
+          CHANGE_MINIKUBE_NONE_USER: true
+        run: |
+          sudo minikube start --driver=docker --wait=all --v=4
 
-- name: Install Minikube
-run: |
-curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-sudo install minikube-linux-amd64 /usr/local/bin/minikube
+      - name: Apply Broken Deployment
+        run: |
+          kubectl apply -f kubernetes/bad-deployment.yaml
 
+      - name: Wait for Pod to Fail
+        run: sleep 20
 
-- name: Start Minikube (Docker driver)
-env:
-CHANGE_MINIKUBE_NONE_USER: true
-run: |
-sudo minikube start --driver=docker --wait=all --v=5
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama pull llama3 || true
 
+      - name: Run Log Collection
+        run: |
+          bash scripts/collect.sh
 
-- name: Apply broken deployment
-run: |
-kubectl apply -f kubernetes/bad-deployment.yaml
+      - name: Run AI Analysis
+        run: |
+          bash scripts/analyze.sh
 
-
-- name: Wait for pod
-run: |
-sleep 20
-
-
-- name: Install Ollama
-run: |
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3 || true
-
-
-- name: Run collection and analysis
-run: |
-bash scripts/collect.sh
-bash scripts/analyze.sh
