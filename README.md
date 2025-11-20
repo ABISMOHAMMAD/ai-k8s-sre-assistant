@@ -12,4 +12,7 @@ Actions
 # Docker (use your OS package manager)
 # kubectl
 # minikube
-# jq 
+# jq
+
+
+# 

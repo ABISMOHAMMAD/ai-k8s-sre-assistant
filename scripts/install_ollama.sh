@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+#
+#
+##
+#
+#
+#
 
 
 # Minimal installer wrapper for Ollama (works on many Linux x86_64 runners)
