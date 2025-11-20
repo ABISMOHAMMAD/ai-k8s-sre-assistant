@@ -14,5 +14,3 @@ Actions
 # minikube
 # jq
 
-
-# 
